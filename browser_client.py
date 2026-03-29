@@ -158,24 +158,28 @@ class TailChatBrowserClient:
             # 查找登录表单
             # 尝试多种可能的登录表单选择器
             selectors = [
-                'input.appearance-none',
+                "input.appearance-none",
                 'input[name="login-email"]',
                 'input[name="login-username"]',
+                'input[name="email"]',
+                'input[name="username"]',
                 'input[type="text"]',
                 'input[type="email"]',
-                'input[name="username"]',
-                'input[name="email"]',
                 'input[placeholder*="用户名"]',
                 'input[placeholder*="邮箱"]',
                 'input[placeholder*="account"]',
                 'input[placeholder*="name@example.com"]',
+                'input[placeholder*="邮箱或用户名"]',
+                'input[placeholder*="Email"]',
+                'input[placeholder*="email"]',
+                "input",
             ]
 
             username_input = None
             for selector in selectors:
                 try:
                     username_input = await self.page.wait_for_selector(
-                        selector, timeout=2000
+                        selector, timeout=5000
                     )
                     if username_input:
                         break
@@ -209,7 +213,7 @@ class TailChatBrowserClient:
             for selector in password_selectors:
                 try:
                     password_input = await self.page.wait_for_selector(
-                        selector, timeout=2000
+                        selector, timeout=5000
                     )
                     if password_input:
                         break
