@@ -3,11 +3,12 @@
 支持表情、图片、网址、文件等
 """
 
-import re
-import random
 import os
-from typing import List, Dict, Optional, Tuple
+import random
+import re
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+
 from loguru import logger
 
 from config import config

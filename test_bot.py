@@ -3,8 +3,9 @@ TailChat AI Bot 测试脚本
 用于测试各个模块的功能
 """
 
-import sys
 import os
+import sys
+
 from loguru import logger
 
 # 添加项目路径
@@ -12,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import config
 from deepseek_client import deepseek_client
-from rich_media import rich_media
 from git_image_support import git_image_support
+from rich_media import rich_media
 
 
 def test_config():

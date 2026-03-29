@@ -2,17 +2,19 @@
 消息处理器和AI决策模块
 """
 
-import re
 import random
+import re
 import time
-from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
 from loguru import logger
 
 from config import config
-from tailchat_client import Message, client as tailchat_client
-from deepseek_client import deepseek_client
 from conversation_manager import conversation_manager
+from deepseek_client import deepseek_client
+from tailchat_client import Message
+from tailchat_client import client as tailchat_client
 
 
 class MessageProcessor:

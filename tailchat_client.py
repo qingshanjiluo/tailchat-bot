@@ -2,15 +2,16 @@
 TailChat 客户端模块
 """
 
-import json
-import time
-import random
 import asyncio
-import websocket
+import json
+import random
 import threading
-from typing import Dict, List, Optional, Any, Callable
+import time
 from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
+
 import requests
+import websocket
 from loguru import logger
 
 from config import config

@@ -2,18 +2,19 @@
 主动消息发送器模块
 """
 
-import time
 import random
-import schedule
 import threading
+import time
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Callable
+from typing import Callable, Dict, List, Optional
+
+import schedule
 from loguru import logger
 
 from config import config
-from tailchat_client import client as tailchat_client
 from deepseek_client import deepseek_client
 from message_processor import processor as message_processor
+from tailchat_client import client as tailchat_client
 
 
 class ActiveMessageSender:

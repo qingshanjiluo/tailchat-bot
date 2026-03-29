@@ -4,14 +4,16 @@ TailChat 浏览器自动化客户端
 """
 
 import asyncio
-import time
-import random
 import json
-from typing import Dict, List, Optional, Any, Callable
+import random
+import time
 from dataclasses import dataclass
-from loguru import logger
+from typing import Any, Callable, Dict, List, Optional
 
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+from loguru import logger
+from playwright.async_api import (Browser, BrowserContext, Page,
+                                  async_playwright)
+
 from config import config
 
 
@@ -150,31 +152,33 @@ class TailChatBrowserClient:
                 # 尝试多种已登录标识
                 logged_in_selectors = [
                     'img[src*="avatar"]',
-                    '.user-avatar',
+                    ".user-avatar",
                     '[data-testid="user-avatar"]',
                     'div[class*="user-info"]',
                     'button:has-text("退出")',
                     'button:has-text("Logout")',
                     'button:has-text("Sign out")',
                 ]
-                
+
                 for selector in logged_in_selectors:
                     try:
-                        element = await self.page.wait_for_selector(selector, timeout=2000)
+                        element = await self.page.wait_for_selector(
+                            selector, timeout=2000
+                        )
                         if element:
                             logger.info(f"检测到已登录状态 (选择器: {selector})")
                             await self._get_user_info()
                             return True
                     except:
                         continue
-                
+
                 # 检查当前URL是否不是登录页面
                 current_url = self.page.url
                 if "/entry/login" not in current_url and "/login" not in current_url:
                     logger.info(f"当前URL不是登录页面: {current_url}，可能已登录")
                     await self._get_user_info()
                     return True
-                    
+
             except Exception as e:
                 logger.debug(f"登录状态检测异常: {e}")
 
@@ -222,7 +226,7 @@ class TailChatBrowserClient:
                     screenshot_path = "debug_username_not_found.png"
                     await self.page.screenshot(path=screenshot_path)
                     logger.info(f"已保存截图: {screenshot_path}")
-                    
+
                     # 获取页面HTML以便分析
                     html_content = await self.page.content()
                     html_path = "debug_page_content.html"
@@ -291,7 +295,7 @@ class TailChatBrowserClient:
                 'button:has-text("Log in")',
                 'button:has-text("登入")',
                 'input[type="submit"]',
-                'button.ant-btn-primary',
+                "button.ant-btn-primary",
                 'button[class*="login-button"]',
                 'button[class*="submit-button"]',
             ]
@@ -336,11 +340,11 @@ class TailChatBrowserClient:
             # 检查登录是否成功
             try:
                 logger.info("等待登录成功验证...")
-                
+
                 # 改进的登录成功检测
                 success_selectors = [
                     'img[src*="avatar"]',
-                    '.user-avatar',
+                    ".user-avatar",
                     '[data-testid="user-avatar"]',
                     'div[class*="user-info"]',
                     'button:has-text("退出")',
@@ -349,7 +353,7 @@ class TailChatBrowserClient:
                     'div[class*="main-content"]',  # 主内容区域
                     'div[class*="chat-container"]',  # 聊天容器
                 ]
-                
+
                 success_element = None
                 for selector in success_selectors:
                     try:
@@ -361,15 +365,18 @@ class TailChatBrowserClient:
                             break
                     except:
                         continue
-                
+
                 if not success_element:
                     # 检查URL是否改变（从登录页面跳转）
                     current_url = self.page.url
-                    if "/entry/login" not in current_url and "/login" not in current_url:
+                    if (
+                        "/entry/login" not in current_url
+                        and "/login" not in current_url
+                    ):
                         logger.info(f"URL从登录页面跳转到: {current_url}，认为登录成功")
                     else:
                         logger.warning("未检测到登录成功元素，但继续尝试")
-                
+
                 logger.info("登录成功")
 
                 # 获取用户信息
@@ -377,7 +384,7 @@ class TailChatBrowserClient:
 
                 # 等待页面完全加载
                 await self.page.wait_for_timeout(3000)
-                
+
                 # 记录最终URL
                 final_url = self.page.url
                 logger.info(f"登录后最终URL: {final_url}")
@@ -412,7 +419,7 @@ class TailChatBrowserClient:
                             break
                     except:
                         continue
-                
+
                 # 尝试截图以便调试
                 try:
                     screenshot_path = "debug_login_failed.png"
