@@ -1,0 +1,81 @@
+{
+  "description": "TailChat AI机器人示例JSON指令文件",
+  "instructions": [
+    {
+      "name": "登录成功报告",
+      "description": "登录成功后自动进入指定群组并发送报告",
+      "action_type": "send_group_message",
+      "target": "68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "🤖 TailChat AI机器人已成功登录！\n\n大家好，我是TailChat AI助手，很高兴加入这个群组！\n\n我可以：\n✅ 回复私信消息\n✅ 回复@我的消息\n✅ 主动发送消息\n✅ 定时发送提醒\n\n有什么需要帮助的，请随时@我或私信我！",
+      "mentions": [],
+      "delay_seconds": 5
+    },
+    {
+      "name": "主动打招呼",
+      "description": "在群组中主动打招呼并@特定用户",
+      "action_type": "mention_user",
+      "target": "68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "大家好！我是新来的AI助手，很高兴认识大家！有什么问题可以随时问我哦～",
+      "mentions": ["张三", "李四"],
+      "delay_seconds": 30
+    },
+    {
+      "name": "发送私信问候",
+      "description": "给特定用户发送私信问候",
+      "action_type": "send_direct_message",
+      "target": "user123",
+      "content": "你好！我是TailChat AI助手，有什么可以帮你的吗？",
+      "mentions": [],
+      "delay_seconds": 60
+    },
+    {
+      "name": "每日提醒",
+      "description": "每天定时发送提醒消息",
+      "action_type": "scheduled_message",
+      "target": "68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "📢 每日提醒：记得完成今天的任务哦！保持积极心态，加油！💪",
+      "mentions": [],
+      "delay_seconds": 120,
+      "repeat_interval": 86400,
+      "max_repeats": 7
+    },
+    {
+      "name": "导航到群组",
+      "description": "导航到指定的群组页面",
+      "action_type": "navigate_to_group",
+      "target": "https://chat.mk49.cyou/main/group/68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "",
+      "mentions": [],
+      "delay_seconds": 10
+    },
+    {
+      "name": "群组活跃消息",
+      "description": "在群组中发送活跃气氛的消息",
+      "action_type": "send_group_message",
+      "target": "68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "🎉 今天天气不错，大家有什么计划吗？\n\n分享一些有趣的话题：\n1. 最近看了什么好电影？\n2. 有什么推荐的学习资源？\n3. 周末有什么安排？",
+      "mentions": [],
+      "delay_seconds": 180
+    },
+    {
+      "name": "@所有人提问",
+      "description": "在群组中@所有人提问",
+      "action_type": "mention_user",
+      "target": "68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3",
+      "content": "大家有没有什么技术问题需要讨论？我可以帮忙解答！",
+      "mentions": ["所有人"],
+      "delay_seconds": 300
+    }
+  ],
+  "usage": {
+    "single_instruction": "可以单独使用任何一个指令对象",
+    "batch_instructions": "也可以使用整个instructions数组批量执行",
+    "how_to_use": "将JSON指令传递给MessageScheduler.execute_json_instruction()方法"
+  },
+  "notes": [
+    "target字段可以是群组ID、用户ID或完整的URL",
+    "delay_seconds表示延迟执行的时间（秒）",
+    "repeat_interval和max_repeats用于定时重复消息",
+    "mentions数组用于@提及特定用户"
+  ]
+}

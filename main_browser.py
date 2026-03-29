@@ -17,6 +17,7 @@ from config import config
 from deepseek_client import deepseek_client
 from git_image_support import git_image_support
 from message_processor import processor as message_processor
+from message_scheduler import MessageScheduler
 from rich_media import rich_media
 
 
@@ -27,6 +28,7 @@ class TailChatAIBotBrowser:
         self.running = False
         self.shutdown_requested = False
         self.client = TailChatBrowserClient()
+        self.scheduler = None  # 消息调度器
 
         # 设置日志
         self._setup_logging()
@@ -94,6 +96,11 @@ class TailChatAIBotBrowser:
             # 启动主动消息发送器
             active_sender.start()
             logger.info("主动消息发送器已启动")
+
+            # 创建并启动消息调度器
+            self.scheduler = MessageScheduler(self.client)
+            await self.scheduler.start()
+            logger.info("消息调度器已启动")
 
             # 测试连接
             logger.info("正在测试连接...")
@@ -212,6 +219,11 @@ class TailChatAIBotBrowser:
         # 停止主动消息发送器
         active_sender.stop()
         logger.info("主动消息发送器已停止")
+
+        # 停止消息调度器
+        if self.scheduler:
+            await self.scheduler.stop()
+            logger.info("消息调度器已停止")
 
         # 断开浏览器连接
         await self.client.disconnect()
