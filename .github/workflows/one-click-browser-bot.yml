@@ -26,11 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     
     # 根据运行模式设置超时时间
-    timeout-minutes: ${{ 
-      github.event.inputs.run_mode == 'test' && '30' ||
-      github.event.inputs.run_mode == 'normal' && '960' ||  # 16小时
-      '1440'  # 24小时模式，24小时
-    }}
+    timeout-minutes: ${{ github.event.inputs.run_mode == 'test' && 30 || github.event.inputs.run_mode == 'normal' && 960 || 1440 }}
     
     steps:
     - name: 📦 检出代码
