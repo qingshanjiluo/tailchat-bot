@@ -44,7 +44,7 @@ jobs:
           libxfixes3 \
           libxrandr2 \
           libgbm1 \
-          libasound2 \
+          libasound2t64 \
           libatspi2.0-0 \
           libwayland-client0
           
@@ -69,33 +69,31 @@ jobs:
         echo "创建环境配置文件..."
         
         # 创建.env文件
-        cat > .env << 'EOF'
-# TailChat 浏览器自动化配置
-TAILCHAT_API_URL=$TAILCHAT_API_URL
-TAILCHAT_USERNAME=$TAILCHAT_USERNAME
-TAILCHAT_PASSWORD=$TAILCHAT_PASSWORD
-TAILCHAT_USE_BROWSER=true
-TAILCHAT_HEADLESS=true
-TAILCHAT_BOT_USERNAME=AI助手(GitHub)
-
-# DeepSeek API 配置
-DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
-DEEPSEEK_MODEL=deepseek-chat
-
-# 机器人行为配置
-BOT_ACTIVE_HOURS_START=6
-BOT_ACTIVE_HOURS_END=22
-BOT_AUTO_REPLY=true
-
-# 对话记录配置
-ENABLE_CONVERSATION_HISTORY=true
-CONVERSATION_HISTORY_PATH=./conversations
-
-# 日志配置
-LOG_LEVEL=INFO
-LOG_FILE=logs/bot.log
-EOF
+        echo "# TailChat 浏览器自动化配置" > .env
+        echo "TAILCHAT_API_URL=$TAILCHAT_API_URL" >> .env
+        echo "TAILCHAT_USERNAME=$TAILCHAT_USERNAME" >> .env
+        echo "TAILCHAT_PASSWORD=$TAILCHAT_PASSWORD" >> .env
+        echo "TAILCHAT_USE_BROWSER=true" >> .env
+        echo "TAILCHAT_HEADLESS=true" >> .env
+        echo "TAILCHAT_BOT_USERNAME=AI助手(GitHub)" >> .env
+        echo "" >> .env
+        echo "# DeepSeek API 配置" >> .env
+        echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> .env
+        echo "DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions" >> .env
+        echo "DEEPSEEK_MODEL=deepseek-chat" >> .env
+        echo "" >> .env
+        echo "# 机器人行为配置" >> .env
+        echo "BOT_ACTIVE_HOURS_START=6" >> .env
+        echo "BOT_ACTIVE_HOURS_END=22" >> .env
+        echo "BOT_AUTO_REPLY=true" >> .env
+        echo "" >> .env
+        echo "# 对话记录配置" >> .env
+        echo "ENABLE_CONVERSATION_HISTORY=true" >> .env
+        echo "CONVERSATION_HISTORY_PATH=./conversations" >> .env
+        echo "" >> .env
+        echo "# 日志配置" >> .env
+        echo "LOG_LEVEL=INFO" >> .env
+        echo "LOG_FILE=logs/bot.log" >> .env
         
         echo "环境配置文件创建完成"
         
