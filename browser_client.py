@@ -134,60 +134,103 @@ class TailChatBrowserClient:
     async def login(self) -> bool:
         """登录TailChat"""
         try:
-            logger.info(f"正在登录TailChat: {self.config.api_url}")
+            # 构建登录URL
+            base_url = self.config.api_url.rstrip("/")
+            login_url = f"{base_url}/entry/login"
+            logger.info(f"正在登录TailChat: {login_url}")
 
             # 访问登录页面
-            await self.page.goto(self.config.api_url, wait_until="networkidle")
+            await self.page.goto(login_url, wait_until="networkidle")
 
             # 等待页面加载
-            await self.page.wait_for_timeout(2000)
+            await self.page.wait_for_timeout(3000)
 
-            # 检查是否已经登录
+            # 检查是否已经登录 - 改进的检测逻辑
             try:
-                # 尝试查找用户头像或已登录标识
-                avatar_selector = (
-                    'img[src*="avatar"], .user-avatar, [data-testid="user-avatar"]'
-                )
-                await self.page.wait_for_selector(avatar_selector, timeout=5000)
-                logger.info("检测到已登录状态")
-                await self._get_user_info()
-                return True
-            except:
-                logger.info("未检测到登录状态，开始登录流程")
+                # 尝试多种已登录标识
+                logged_in_selectors = [
+                    'img[src*="avatar"]',
+                    '.user-avatar',
+                    '[data-testid="user-avatar"]',
+                    'div[class*="user-info"]',
+                    'button:has-text("退出")',
+                    'button:has-text("Logout")',
+                    'button:has-text("Sign out")',
+                ]
+                
+                for selector in logged_in_selectors:
+                    try:
+                        element = await self.page.wait_for_selector(selector, timeout=2000)
+                        if element:
+                            logger.info(f"检测到已登录状态 (选择器: {selector})")
+                            await self._get_user_info()
+                            return True
+                    except:
+                        continue
+                
+                # 检查当前URL是否不是登录页面
+                current_url = self.page.url
+                if "/entry/login" not in current_url and "/login" not in current_url:
+                    logger.info(f"当前URL不是登录页面: {current_url}，可能已登录")
+                    await self._get_user_info()
+                    return True
+                    
+            except Exception as e:
+                logger.debug(f"登录状态检测异常: {e}")
 
-            # 查找登录表单
-            # 尝试多种可能的登录表单选择器
+            logger.info("未检测到登录状态，开始登录流程")
+
+            # 查找登录表单 - 针对TailChat优化的选择器
             selectors = [
-                "input.appearance-none",
-                'input[name="login-email"]',
-                'input[name="login-username"]',
-                'input[name="email"]',
-                'input[name="username"]',
                 'input[type="text"]',
                 'input[type="email"]',
+                'input[name="username"]',
+                'input[name="email"]',
                 'input[placeholder*="用户名"]',
                 'input[placeholder*="邮箱"]',
+                'input[placeholder*="email"]',
+                'input[placeholder*="账号"]',
                 'input[placeholder*="account"]',
                 'input[placeholder*="name@example.com"]',
                 'input[placeholder*="邮箱或用户名"]',
                 'input[placeholder*="Email"]',
-                'input[placeholder*="email"]',
+                "input.appearance-none",
+                'input[name="login-email"]',
+                'input[name="login-username"]',
                 "input",
             ]
 
             username_input = None
+            found_selector = None
             for selector in selectors:
                 try:
                     username_input = await self.page.wait_for_selector(
-                        selector, timeout=5000
+                        selector, timeout=3000
                     )
                     if username_input:
+                        logger.info(f"找到用户名输入框: {selector}")
+                        found_selector = selector
                         break
                 except:
+                    logger.debug(f"选择器 {selector} 未找到用户名输入框")
                     continue
 
             if not username_input:
-                logger.error("未找到用户名输入框")
+                logger.error("未找到用户名输入框，尝试截图以便调试")
+                # 尝试截图以便调试
+                try:
+                    screenshot_path = "debug_username_not_found.png"
+                    await self.page.screenshot(path=screenshot_path)
+                    logger.info(f"已保存截图: {screenshot_path}")
+                    
+                    # 获取页面HTML以便分析
+                    html_content = await self.page.content()
+                    html_path = "debug_page_content.html"
+                    with open(html_path, "w", encoding="utf-8") as f:
+                        f.write(html_content)
+                    logger.info(f"已保存页面HTML: {html_path}")
+                except Exception as e:
+                    logger.error(f"保存调试信息失败: {e}")
                 return False
 
             # 模拟人类输入 - 缓慢输入用户名
@@ -198,15 +241,15 @@ class TailChatBrowserClient:
                 await username_input.type(char, delay=random.randint(50, 150))
                 await self.page.wait_for_timeout(random.randint(20, 50))
 
-            # 查找密码输入框
+            # 查找密码输入框 - 针对TailChat优化的选择器
             password_selectors = [
-                'input.appearance-none[type="password"]',
-                'input[name="login-password"]',
                 'input[type="password"]',
                 'input[name="password"]',
+                'input[name="login-password"]',
                 'input[placeholder*="密码"]',
                 'input[placeholder*="password"]',
                 'input[placeholder*="******"]',
+                'input.appearance-none[type="password"]',
             ]
 
             password_input = None
@@ -216,12 +259,20 @@ class TailChatBrowserClient:
                         selector, timeout=5000
                     )
                     if password_input:
+                        logger.info(f"找到密码输入框: {selector}")
                         break
                 except:
                     continue
 
             if not password_input:
                 logger.error("未找到密码输入框")
+                # 尝试截图以便调试
+                try:
+                    screenshot_path = "debug_password_not_found.png"
+                    await self.page.screenshot(path=screenshot_path)
+                    logger.info(f"已保存截图: {screenshot_path}")
+                except:
+                    pass
                 return False
 
             # 模拟人类输入密码
@@ -232,28 +283,40 @@ class TailChatBrowserClient:
                 await password_input.type(char, delay=random.randint(50, 150))
                 await self.page.wait_for_timeout(random.randint(20, 50))
 
-            # 查找登录按钮
+            # 查找登录按钮 - 针对TailChat优化的选择器
             login_button_selectors = [
                 'button[type="submit"]',
                 'button:has-text("登录")',
                 'button:has-text("Sign in")',
                 'button:has-text("Log in")',
+                'button:has-text("登入")',
                 'input[type="submit"]',
+                'button.ant-btn-primary',
+                'button[class*="login-button"]',
+                'button[class*="submit-button"]',
             ]
 
             login_button = None
             for selector in login_button_selectors:
                 try:
                     login_button = await self.page.wait_for_selector(
-                        selector, timeout=2000
+                        selector, timeout=5000
                     )
                     if login_button:
+                        logger.info(f"找到登录按钮: {selector}")
                         break
                 except:
                     continue
 
             if not login_button:
                 logger.error("未找到登录按钮")
+                # 尝试截图以便调试
+                try:
+                    screenshot_path = "debug_login_button_not_found.png"
+                    await self.page.screenshot(path=screenshot_path)
+                    logger.info(f"已保存截图: {screenshot_path}")
+                except:
+                    pass
                 return False
 
             # 模拟人类点击 - 稍微移动鼠标再点击
@@ -272,18 +335,52 @@ class TailChatBrowserClient:
 
             # 检查登录是否成功
             try:
-                # 等待用户信息加载
-                await self.page.wait_for_selector(
-                    'img[src*="avatar"], .user-avatar, [data-testid="user-avatar"]',
-                    timeout=10000,
-                )
+                logger.info("等待登录成功验证...")
+                
+                # 改进的登录成功检测
+                success_selectors = [
+                    'img[src*="avatar"]',
+                    '.user-avatar',
+                    '[data-testid="user-avatar"]',
+                    'div[class*="user-info"]',
+                    'button:has-text("退出")',
+                    'button:has-text("Logout")',
+                    'button:has-text("Sign out")',
+                    'div[class*="main-content"]',  # 主内容区域
+                    'div[class*="chat-container"]',  # 聊天容器
+                ]
+                
+                success_element = None
+                for selector in success_selectors:
+                    try:
+                        success_element = await self.page.wait_for_selector(
+                            selector, timeout=5000
+                        )
+                        if success_element:
+                            logger.info(f"登录成功检测到元素: {selector}")
+                            break
+                    except:
+                        continue
+                
+                if not success_element:
+                    # 检查URL是否改变（从登录页面跳转）
+                    current_url = self.page.url
+                    if "/entry/login" not in current_url and "/login" not in current_url:
+                        logger.info(f"URL从登录页面跳转到: {current_url}，认为登录成功")
+                    else:
+                        logger.warning("未检测到登录成功元素，但继续尝试")
+                
                 logger.info("登录成功")
 
                 # 获取用户信息
                 await self._get_user_info()
 
                 # 等待页面完全加载
-                await self.page.wait_for_timeout(2000)
+                await self.page.wait_for_timeout(3000)
+                
+                # 记录最终URL
+                final_url = self.page.url
+                logger.info(f"登录后最终URL: {final_url}")
 
                 return True
 
@@ -297,6 +394,11 @@ class TailChatBrowserClient:
                     "text=错误",
                     "text=Error",
                     "text=失败",
+                    "text=Invalid",
+                    "text=invalid",
+                    "text=不正确",
+                    "text=密码错误",
+                    "text=用户名错误",
                 ]
 
                 for selector in error_selectors:
@@ -310,6 +412,14 @@ class TailChatBrowserClient:
                             break
                     except:
                         continue
+                
+                # 尝试截图以便调试
+                try:
+                    screenshot_path = "debug_login_failed.png"
+                    await self.page.screenshot(path=screenshot_path)
+                    logger.info(f"已保存登录失败截图: {screenshot_path}")
+                except:
+                    pass
 
                 return False
 
