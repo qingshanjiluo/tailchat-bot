@@ -6,9 +6,10 @@
 import json
 import os
 import time
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from typing import Any, Dict, List, Optional
+
 from loguru import logger
 
 from config import config

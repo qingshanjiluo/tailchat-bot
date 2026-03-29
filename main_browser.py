@@ -4,19 +4,20 @@ TailChat AI 机器人主程序 - 浏览器自动化版本
 """
 
 import asyncio
-import time
 import signal
 import sys
+import time
 from datetime import datetime
+
 from loguru import logger
 
-from config import config
-from browser_client import TailChatBrowserClient
-from deepseek_client import deepseek_client
-from message_processor import processor as message_processor
 from active_sender import active_sender
-from rich_media import rich_media
+from browser_client import TailChatBrowserClient
+from config import config
+from deepseek_client import deepseek_client
 from git_image_support import git_image_support
+from message_processor import processor as message_processor
+from rich_media import rich_media
 
 
 class TailChatAIBotBrowser:

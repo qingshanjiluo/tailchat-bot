@@ -3,9 +3,10 @@
 """
 
 import os
-from typing import Optional
-from dotenv import load_dotenv
 from dataclasses import dataclass
+from typing import Optional
+
+from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()

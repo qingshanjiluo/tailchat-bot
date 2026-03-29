@@ -4,10 +4,11 @@ DeepSeek API 客户端模块 - 集成对话记录
 
 import json
 import time
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
+
 import requests
-from openai import OpenAI
 from loguru import logger
+from openai import OpenAI
 
 from config import config
 from conversation_manager import conversation_manager
