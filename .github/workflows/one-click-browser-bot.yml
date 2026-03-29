@@ -25,8 +25,8 @@ jobs:
   run-browser-bot:
     runs-on: ubuntu-latest
     
-    # 根据运行模式设置超时时间
-    timeout-minutes: ${{ github.event.inputs.run_mode == 'test' && 30 || github.event.inputs.run_mode == 'normal' && 960 || 1440 }}
+    # 设置超时时间
+    timeout-minutes: 1440  # 24小时，足够所有模式运行
     
     steps:
     - name: 📦 检出代码
@@ -37,7 +37,7 @@ jobs:
       with:
         python-version: '3.10'
         
-    - name: 📥 安装系统依赖（Playwright所需）
+    - name: 📥 安装系统依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -70,79 +70,77 @@ jobs:
         
     - name: ⚙️ 创建环境配置文件
       env:
-        # 必需配置
         TAILCHAT_USERNAME: ${{ secrets.TAILCHAT_USERNAME }}
         TAILCHAT_PASSWORD: ${{ secrets.TAILCHAT_PASSWORD }}
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        
-        # 可选配置
         TAILCHAT_API_URL: ${{ secrets.TAILCHAT_API_URL || 'https://chat.mk49.cyou' }}
-        TAILCHAT_HEADLESS: 'true'
-        TAILCHAT_USE_BROWSER: 'true'
-        
-        # 根据运行模式调整在线时间
-        BOT_ACTIVE_HOURS_START: ${{ github.event.inputs.run_mode == '24h' && '0' || '6' }}
-        BOT_ACTIVE_HOURS_END: ${{ github.event.inputs.run_mode == '24h' && '24' || '22' }}
-        
-        # 日志配置
-        LOG_LEVEL: ${{ github.event.inputs.enable_logging == 'true' && 'DEBUG' || 'INFO' }}
-        
-        # 其他配置
-        BOT_AUTO_REPLY: 'true'
-        BOT_AUTO_REPLY_PROBABILITY: '0.8'
-        WELCOME_MESSAGE: '🤖 你好！我是AI助手，已通过GitHub Actions一键启动。有什么可以帮你的吗？'
-        BUSY_MESSAGE: '💤 我现在不在线，请在活动时间内联系我。'
         
       run: |
         echo "🔧 创建环境配置文件..."
         
-        # 使用echo命令逐行创建.env文件，避免here-document的语法问题
-        echo "# TailChat 浏览器自动化配置" > .env
-        echo "TAILCHAT_API_URL=$TAILCHAT_API_URL" >> .env
-        echo "TAILCHAT_USERNAME=$TAILCHAT_USERNAME" >> .env
-        echo "TAILCHAT_PASSWORD=$TAILCHAT_PASSWORD" >> .env
-        echo "TAILCHAT_USE_BROWSER=$TAILCHAT_USE_BROWSER" >> .env
-        echo "TAILCHAT_HEADLESS=$TAILCHAT_HEADLESS" >> .env
-        echo "TAILCHAT_BOT_USERNAME=AI助手(GitHub)" >> .env
-        echo "" >> .env
-        echo "# DeepSeek API 配置" >> .env
-        echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> .env
-        echo "DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions" >> .env
-        echo "DEEPSEEK_MODEL=deepseek-chat" >> .env
-        echo "" >> .env
-        echo "# 机器人行为配置" >> .env
-        echo "BOT_ACTIVE_HOURS_START=$BOT_ACTIVE_HOURS_START" >> .env
-        echo "BOT_ACTIVE_HOURS_END=$BOT_ACTIVE_HOURS_END" >> .env
-        echo "BOT_AUTO_REPLY=$BOT_AUTO_REPLY" >> .env
-        echo "BOT_AUTO_REPLY_PROBABILITY=$BOT_AUTO_REPLY_PROBABILITY" >> .env
-        echo "BOT_MAX_MESSAGE_LENGTH=1000" >> .env
-        echo "" >> .env
-        echo "# 对话记录配置" >> .env
-        echo "ENABLE_CONVERSATION_HISTORY=true" >> .env
-        echo "CONVERSATION_HISTORY_PATH=./conversations" >> .env
-        echo "MAX_HISTORY_MESSAGES=50" >> .env
-        echo "" >> .env
-        echo "# 消息模板" >> .env
-        echo "WELCOME_MESSAGE=$WELCOME_MESSAGE" >> .env
-        echo "BUSY_MESSAGE=$BUSY_MESSAGE" >> .env
-        echo "" >> .env
-        echo "# 日志配置" >> .env
-        echo "LOG_LEVEL=$LOG_LEVEL" >> .env
-        echo "LOG_FILE=logs/bot_github_actions.log" >> .env
-        echo "" >> .env
-        echo "# 主动消息配置（可选）" >> .env
-        echo "ACTIVE_MESSAGE_INTERVAL=3600" >> .env
-        echo "" >> .env
-        echo "# Git仓库配置（可选）" >> .env
-        echo "# GIT_REPO_URL=https://github.com/username/repo.git" >> .env
-        echo "# GIT_REPO_BRANCH=main" >> .env
-        echo "# GIT_IMAGE_PATH=images/" >> .env
+        # 根据运行模式设置在线时间
+        if [ "${{ github.event.inputs.run_mode }}" = "24h" ]; then
+          BOT_START=0
+          BOT_END=24
+        elif [ "${{ github.event.inputs.run_mode }}" = "test" ]; then
+          BOT_START=0
+          BOT_END=24
+        else
+          BOT_START=6
+          BOT_END=22
+        fi
+        
+        # 设置日志级别
+        if [ "${{ github.event.inputs.enable_logging }}" = "true" ]; then
+          LOG_LEVEL="DEBUG"
+        else
+          LOG_LEVEL="INFO"
+        fi
+        
+        # 创建.env文件
+        cat > .env << 'EOF'
+# TailChat 浏览器自动化配置
+TAILCHAT_API_URL=$TAILCHAT_API_URL
+TAILCHAT_USERNAME=$TAILCHAT_USERNAME
+TAILCHAT_PASSWORD=$TAILCHAT_PASSWORD
+TAILCHAT_USE_BROWSER=true
+TAILCHAT_HEADLESS=true
+TAILCHAT_BOT_USERNAME=AI助手(GitHub)
+
+# DeepSeek API 配置
+DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-chat
+
+# 机器人行为配置
+BOT_ACTIVE_HOURS_START=$BOT_START
+BOT_ACTIVE_HOURS_END=$BOT_END
+BOT_AUTO_REPLY=true
+BOT_AUTO_REPLY_PROBABILITY=0.8
+BOT_MAX_MESSAGE_LENGTH=1000
+
+# 对话记录配置
+ENABLE_CONVERSATION_HISTORY=true
+CONVERSATION_HISTORY_PATH=./conversations
+MAX_HISTORY_MESSAGES=50
+
+# 消息模板
+WELCOME_MESSAGE=🤖 你好！我是AI助手，已通过GitHub Actions一键启动。有什么可以帮你的吗？
+BUSY_MESSAGE=💤 我现在不在线，请在活动时间内联系我。
+
+# 日志配置
+LOG_LEVEL=$LOG_LEVEL
+LOG_FILE=logs/bot_github_actions.log
+
+# 主动消息配置
+ACTIVE_MESSAGE_INTERVAL=3600
+EOF
         
         echo "✅ 环境配置文件创建完成"
         echo "📋 配置摘要："
         echo "  - TailChat用户: $TAILCHAT_USERNAME"
         echo "  - 运行模式: ${{ github.event.inputs.run_mode }}"
-        echo "  - 在线时间: $BOT_ACTIVE_HOURS_START:00-$BOT_ACTIVE_HOURS_END:00"
+        echo "  - 在线时间: $BOT_START:00-$BOT_END:00"
         echo "  - 日志级别: $LOG_LEVEL"
         
     - name: 📁 创建必要目录
@@ -164,7 +162,7 @@ try:
     print(f'   用户名: {config.tailchat.username}')
     print(f'   使用浏览器: {config.tailchat.use_browser}')
     print(f'   无头模式: {config.tailchat.headless}')
-    print(f'   DeepSeek API: {'已配置' if config.deepseek.api_key else '未配置'}')
+    print(f'   DeepSeek API: {\"已配置\" if config.deepseek.api_key else \"未配置\"}')
     print(f'   在线时间: {config.behavior.active_hours_start}:00-{config.behavior.active_hours_end}:00')
     
     if config.validate():
@@ -179,7 +177,6 @@ except Exception as e:
         
     - name: 🤖 启动TailChat浏览器自动化机器人
       env:
-        # 传递运行模式到机器人
         RUN_MODE: ${{ github.event.inputs.run_mode }}
         ENABLE_LOGGING: ${{ github.event.inputs.enable_logging }}
       run: |
@@ -192,14 +189,14 @@ except Exception as e:
         echo "开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "========================================"
         
-        # 设置环境变量让机器人知道是在GitHub Actions中运行
+        # 设置环境变量
         export GITHUB_ACTIONS=true
         export RUN_MODE=$RUN_MODE
         
         # 启动机器人
         python main_browser.py
         
-    - name: 📤 上传日志文件（运行完成后）
+    - name: 📤 上传日志文件
       if: always()
       uses: actions/upload-artifact@v4
       with:
