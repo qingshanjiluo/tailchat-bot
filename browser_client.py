@@ -810,6 +810,185 @@ class TailChatBrowserClient:
         """添加消息处理器"""
         self.message_handlers.append(handler)
 
+    async def _close_modal_overlays(self):
+        """关闭可能遮挡的模态框和覆盖层"""
+        try:
+            # 首先，通过JavaScript直接移除shepherd覆盖层的pointer-events样式
+            # 这是解决shepherd-modal拦截点击问题的关键
+            try:
+                await self.page.evaluate("""
+                    () => {
+                        // 移除所有shepherd相关元素的pointer-events样式
+                        const shepherdElements = document.querySelectorAll(
+                            '.shepherd-modal-is-visible, .shepherd-modal-overlay-container, .shepherd-modal, .shepherd-element'
+                        );
+                        shepherdElements.forEach(el => {
+                            el.style.pointerEvents = 'none';
+                            el.style.zIndex = '-1';
+                        });
+                        
+                        // 移除shepherd按钮的pointer-events限制
+                        const shepherdButtons = document.querySelectorAll('.shepherd-button');
+                        shepherdButtons.forEach(btn => {
+                            btn.style.pointerEvents = 'auto';
+                        });
+                        
+                        return shepherdElements.length;
+                    }
+                """)
+                logger.info("已通过JavaScript移除shepherd覆盖层的pointer-events限制")
+                await self.page.wait_for_timeout(300)
+            except Exception as js_error:
+                logger.warning(f"JavaScript移除样式失败: {js_error}")
+            
+            # 检查并关闭shepherd模态框（新手引导）- 增加更多选择器
+            shepherd_selectors = [
+                ".shepherd-modal-is-visible",
+                ".shepherd-modal-overlay-container",
+                ".shepherd-element",
+                ".shepherd-modal",
+                '[data-shepherd-step-id]',
+                '.shepherd-step',  # 新增
+                '.shepherd-content',  # 新增
+                'div[class*="shepherd"]',  # 新增：匹配任何包含shepherd的div
+            ]
+            
+            max_retries = 3
+            for retry in range(max_retries):
+                modal_closed = False
+                
+                for selector in shepherd_selectors:
+                    try:
+                        modal = await self.page.query_selector(selector)
+                        if modal:
+                            logger.info(f"发现shepherd模态框: {selector} (重试 {retry+1}/{max_retries})")
+                            
+                            # 尝试点击关闭按钮 - 增加更多选择器
+                            close_buttons = [
+                                '.shepherd-cancel-icon',
+                                '.shepherd-close',
+                                '.shepherd-button.shepherd-button-secondary',  # 精确匹配inspector中的按钮
+                                'button.shepherd-button',  # 通用shepherd按钮
+                                'button[class*="shepherd-button"]',
+                                'button:has-text("跳过")',
+                                'button:has-text("跳过引导")',  # 新增：精确匹配文本
+                                'button:has-text("Skip")',
+                                'button:has-text("Skip Tour")',
+                                'button:has-text("关闭")',
+                                'button:has-text("Close")',
+                                'button[aria-label*="关闭"]',
+                                'button[aria-label*="close"]',
+                                'button[aria-label*="skip"]',
+                            ]
+                            
+                            for close_selector in close_buttons:
+                                try:
+                                    # 先在模态框内查找
+                                    close_btn = await modal.query_selector(close_selector)
+                                    if not close_btn:
+                                        # 如果模态框内找不到，在整个页面查找
+                                        close_btn = await self.page.query_selector(close_selector)
+                                    
+                                    if close_btn:
+                                        # 确保按钮可见且可点击
+                                        is_visible = await close_btn.is_visible()
+                                        if is_visible:
+                                            await close_btn.click()
+                                            logger.info(f"已点击关闭按钮: {close_selector}")
+                                            modal_closed = True
+                                            await self.page.wait_for_timeout(500)
+                                            break
+                                except Exception as click_error:
+                                    logger.debug(f"点击按钮失败 {close_selector}: {click_error}")
+                                    continue
+                            
+                            # 如果通过按钮关闭成功，继续下一个选择器
+                            if modal_closed:
+                                continue
+                            
+                            # 如果找不到关闭按钮，尝试通过JavaScript直接移除元素
+                            try:
+                                await self.page.evaluate(f"""
+                                    (selector) => {{
+                                        const element = document.querySelector(selector);
+                                        if (element) {{
+                                            element.style.display = 'none';
+                                            element.remove();
+                                            return true;
+                                        }}
+                                        return false;
+                                    }}
+                                """, selector)
+                                logger.info(f"已通过JavaScript移除元素: {selector}")
+                                modal_closed = True
+                                await self.page.wait_for_timeout(300)
+                            except:
+                                pass
+                            
+                            # 如果JavaScript移除失败，尝试点击模态框外部
+                            if not modal_closed:
+                                try:
+                                    # 获取模态框位置
+                                    box = await modal.bounding_box()
+                                    if box:
+                                        # 点击模态框外部区域（左上角偏移）
+                                        await self.page.mouse.click(
+                                            box["x"] - 20,
+                                            box["y"] - 20
+                                        )
+                                        logger.info("已点击模态框外部区域")
+                                        await self.page.wait_for_timeout(500)
+                                        modal_closed = True
+                                except:
+                                    pass
+                    except Exception as selector_error:
+                        logger.debug(f"处理选择器 {selector} 失败: {selector_error}")
+                        continue
+                
+                # 如果本轮没有关闭任何模态框，或者已经重试了足够次数，退出循环
+                if not modal_closed or retry == max_retries - 1:
+                    break
+                    
+                # 等待一段时间后重试
+                await self.page.wait_for_timeout(1000)
+            
+            # 检查其他常见模态框
+            other_modal_selectors = [
+                '.ant-modal',           # Ant Design模态框
+                '.modal',               # 通用模态框
+                '.overlay',             # 覆盖层
+                '[role="dialog"]',      # 对话框
+                '.popup',               # 弹出框
+                '.MuiModal-root',       # Material-UI模态框
+            ]
+            
+            for selector in other_modal_selectors:
+                try:
+                    modal = await self.page.query_selector(selector)
+                    if modal:
+                        logger.info(f"发现其他模态框: {selector}")
+                        
+                        # 尝试按ESC键关闭
+                        await self.page.keyboard.press("Escape")
+                        await self.page.wait_for_timeout(300)
+                        
+                        # 尝试点击关闭按钮
+                        close_in_modal = await modal.query_selector(
+                            'button[aria-label="Close"], button:has-text("×"), .close, .modal-close'
+                        )
+                        if close_in_modal:
+                            await close_in_modal.click()
+                            await self.page.wait_for_timeout(300)
+                except:
+                    continue
+            
+            logger.info("模态框检查完成")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"关闭模态框时发生错误: {e}")
+            return False
+
     async def send_message(
         self, converse_id: str, content: str, mentions: List[str] = None
     ):
@@ -819,6 +998,10 @@ class TailChatBrowserClient:
 
             # 确保在正确的会话页面
             await self._ensure_converse_page(converse_id)
+            
+            # 在尝试发送消息前，先关闭可能遮挡的模态框
+            await self._close_modal_overlays()
+            await self.page.wait_for_timeout(500)
 
             # 查找消息输入框 - 根据TailChat实际DOM结构更新
             input_selectors = [
@@ -851,15 +1034,87 @@ class TailChatBrowserClient:
                 logger.error("未找到消息输入框")
                 return False
 
-            # 模拟人类输入
-            await message_input.click()
+            # 模拟人类输入 - 使用安全的点击方法
+            click_success = False
+            max_click_retries = 3
+            
+            for click_retry in range(max_click_retries):
+                try:
+                    # 在每次点击尝试前，再次检查并关闭可能出现的模态框
+                    if click_retry > 0:
+                        await self._close_modal_overlays()
+                        await self.page.wait_for_timeout(500)
+                    
+                    # 确保元素仍然可见和可点击
+                    is_visible = await message_input.is_visible()
+                    if not is_visible:
+                        logger.warning(f"输入框不可见，重试 {click_retry+1}/{max_click_retries}")
+                        # 重新查找输入框
+                        for selector in input_selectors:
+                            try:
+                                message_input = await self.page.wait_for_selector(
+                                    selector, timeout=1000
+                                )
+                                if message_input:
+                                    break
+                            except:
+                                continue
+                        continue
+                    
+                    # 尝试点击输入框
+                    await message_input.click()
+                    logger.info(f"成功点击输入框 (尝试 {click_retry+1}/{max_click_retries})")
+                    click_success = True
+                    break
+                    
+                except Exception as click_error:
+                    logger.warning(f"点击输入框失败 (尝试 {click_retry+1}/{max_click_retries}): {click_error}")
+                    
+                    # 如果是元素被遮挡的错误，尝试通过JavaScript直接聚焦
+                    if "intercepts pointer events" in str(click_error) or "is not visible" in str(click_error):
+                        try:
+                            await self.page.evaluate("""
+                                (selector) => {
+                                    const input = document.querySelector(selector);
+                                    if (input) {
+                                        input.focus();
+                                        input.click();
+                                        return true;
+                                    }
+                                    return false;
+                                }
+                            """, input_selectors[0] if input_selectors else 'textarea')
+                            logger.info("已通过JavaScript聚焦输入框")
+                            click_success = True
+                            break
+                        except Exception as js_error:
+                            logger.warning(f"JavaScript聚焦失败: {js_error}")
+                    
+                    # 等待后重试
+                    if click_retry < max_click_retries - 1:
+                        await self.page.wait_for_timeout(1000)
+            
+            if not click_success:
+                logger.error("无法点击输入框，发送消息失败")
+                return False
+            
             await self.page.wait_for_timeout(random.randint(200, 500))
 
             # 清空输入框（如果有内容）
             try:
                 await message_input.fill("")
             except:
-                pass
+                # 如果fill失败，尝试通过JavaScript清空
+                try:
+                    await self.page.evaluate("""
+                        (element) => {
+                            element.value = '';
+                            element.textContent = '';
+                            element.innerHTML = '';
+                        }
+                    """, message_input)
+                except:
+                    pass
 
             await self.page.wait_for_timeout(random.randint(100, 300))
 
