@@ -813,33 +813,104 @@ class TailChatBrowserClient:
     async def _close_modal_overlays(self):
         """关闭可能遮挡的模态框和覆盖层"""
         try:
-            # 首先，通过JavaScript直接移除shepherd覆盖层的pointer-events样式
+            # 首先，通过JavaScript一次性移除所有shepherd相关元素
             # 这是解决shepherd-modal拦截点击问题的关键
             try:
-                await self.page.evaluate("""
+                removed_count = await self.page.evaluate("""
                     () => {
-                        // 移除所有shepherd相关元素的pointer-events样式
-                        const shepherdElements = document.querySelectorAll(
-                            '.shepherd-modal-is-visible, .shepherd-modal-overlay-container, .shepherd-modal, .shepherd-element'
-                        );
-                        shepherdElements.forEach(el => {
-                            el.style.pointerEvents = 'none';
-                            el.style.zIndex = '-1';
+                        let count = 0;
+                        
+                        // 一次性选择所有shepherd相关元素
+                        const shepherdSelectors = [
+                            '.shepherd-modal-is-visible',
+                            '.shepherd-modal-overlay-container',
+                            '.shepherd-modal',
+                            '.shepherd-element',
+                            '.shepherd-step',
+                            '.shepherd-content',
+                            '[data-shepherd-step-id]',
+                            'div[class*="shepherd"]'
+                        ];
+                        
+                        // 收集所有元素
+                        const allElements = [];
+                        shepherdSelectors.forEach(selector => {
+                            const elements = document.querySelectorAll(selector);
+                            elements.forEach(el => allElements.push(el));
                         });
                         
-                        // 移除shepherd按钮的pointer-events限制
+                        // 移除或隐藏所有元素
+                        allElements.forEach(el => {
+                            try {
+                                // 先尝试完全移除
+                                el.remove();
+                                count++;
+                            } catch (e) {
+                                // 如果移除失败，尝试隐藏
+                                el.style.display = 'none';
+                                el.style.visibility = 'hidden';
+                                el.style.opacity = '0';
+                                el.style.pointerEvents = 'none';
+                                el.style.zIndex = '-9999';
+                                count++;
+                            }
+                        });
+                        
+                        // 特别处理shepherd按钮 - 确保它们可点击
                         const shepherdButtons = document.querySelectorAll('.shepherd-button');
                         shepherdButtons.forEach(btn => {
                             btn.style.pointerEvents = 'auto';
+                            btn.style.zIndex = '9999';
                         });
                         
-                        return shepherdElements.length;
+                        // 如果还有shepherd相关元素，尝试更激进的方法
+                        if (count === 0) {
+                            // 查找所有包含shepherd类名的元素
+                            const allElements = document.querySelectorAll('*');
+                            allElements.forEach(el => {
+                                if (el.className && typeof el.className === 'string' &&
+                                    (el.className.includes('shepherd') ||
+                                     el.getAttribute('class')?.includes('shepherd'))) {
+                                    try {
+                                        el.remove();
+                                        count++;
+                                    } catch (e) {
+                                        el.style.display = 'none';
+                                        el.style.pointerEvents = 'none';
+                                        el.style.zIndex = '-9999';
+                                        count++;
+                                    }
+                                }
+                            });
+                        }
+                        
+                        return count;
                     }
                 """)
-                logger.info("已通过JavaScript移除shepherd覆盖层的pointer-events限制")
-                await self.page.wait_for_timeout(300)
+                logger.info(f"已通过JavaScript移除或隐藏 {removed_count} 个shepherd相关元素")
+                await self.page.wait_for_timeout(500)
             except Exception as js_error:
-                logger.warning(f"JavaScript移除样式失败: {js_error}")
+                logger.warning(f"JavaScript移除shepherd元素失败: {js_error}")
+                
+                # 备用方案：尝试更简单的JavaScript
+                try:
+                    await self.page.evaluate("""
+                        () => {
+                            // 简单粗暴：隐藏所有包含shepherd的元素
+                            const elements = document.querySelectorAll('*');
+                            elements.forEach(el => {
+                                const className = el.className;
+                                if (className && typeof className === 'string' && className.includes('shepherd')) {
+                                    el.style.display = 'none';
+                                    el.style.pointerEvents = 'none';
+                                }
+                            });
+                            return true;
+                        }
+                    """)
+                    logger.info("已通过备用JavaScript方案隐藏shepherd元素")
+                except:
+                    pass
             
             # 检查并关闭shepherd模态框（新手引导）- 增加更多选择器
             shepherd_selectors = [
@@ -853,15 +924,56 @@ class TailChatBrowserClient:
                 'div[class*="shepherd"]',  # 新增：匹配任何包含shepherd的div
             ]
             
-            max_retries = 3
+            # 在重试循环开始前，先执行一次全面的JavaScript清理
+            max_retries = 5  # 增加重试次数
+            modal_closed = False
+            
             for retry in range(max_retries):
-                modal_closed = False
+                # 每次重试都先执行JavaScript全面清理
+                if retry > 0:
+                    try:
+                        await self.page.evaluate("""
+                            () => {
+                                // 清理可能重新出现的shepherd元素
+                                const selectors = [
+                                    '.shepherd-modal-is-visible',
+                                    '.shepherd-modal-overlay-container',
+                                    '.shepherd-modal',
+                                    '.shepherd-element',
+                                    '.shepherd-step',
+                                    '.shepherd-content'
+                                ];
+                                
+                                let removed = 0;
+                                selectors.forEach(selector => {
+                                    document.querySelectorAll(selector).forEach(el => {
+                                        el.remove();
+                                        removed++;
+                                    });
+                                });
+                                return removed;
+                            }
+                        """)
+                        await self.page.wait_for_timeout(300)
+                    except:
+                        pass
+                
+                current_modal_closed = False
                 
                 for selector in shepherd_selectors:
                     try:
                         modal = await self.page.query_selector(selector)
                         if modal:
                             logger.info(f"发现shepherd模态框: {selector} (重试 {retry+1}/{max_retries})")
+                            
+                            # 检查元素是否仍然在DOM中（可能已被JavaScript移除但引用还在）
+                            try:
+                                is_connected = await modal.evaluate("el => el.isConnected")
+                                if not is_connected:
+                                    logger.info(f"元素 {selector} 已不在DOM中，跳过")
+                                    continue
+                            except:
+                                pass
                             
                             # 尝试点击关闭按钮 - 增加更多选择器
                             close_buttons = [
@@ -903,7 +1015,7 @@ class TailChatBrowserClient:
                                     continue
                             
                             # 如果通过按钮关闭成功，继续下一个选择器
-                            if modal_closed:
+                            if current_modal_closed:
                                 continue
                             
                             # 如果找不到关闭按钮，尝试通过JavaScript直接移除元素
@@ -920,13 +1032,13 @@ class TailChatBrowserClient:
                                     }}
                                 """, selector)
                                 logger.info(f"已通过JavaScript移除元素: {selector}")
-                                modal_closed = True
+                                current_modal_closed = True
                                 await self.page.wait_for_timeout(300)
                             except:
                                 pass
                             
                             # 如果JavaScript移除失败，尝试点击模态框外部
-                            if not modal_closed:
+                            if not current_modal_closed:
                                 try:
                                     # 获取模态框位置
                                     box = await modal.bounding_box()
@@ -938,15 +1050,19 @@ class TailChatBrowserClient:
                                         )
                                         logger.info("已点击模态框外部区域")
                                         await self.page.wait_for_timeout(500)
-                                        modal_closed = True
+                                        current_modal_closed = True
                                 except:
                                     pass
                     except Exception as selector_error:
                         logger.debug(f"处理选择器 {selector} 失败: {selector_error}")
                         continue
                 
+                # 更新总体状态
+                if current_modal_closed:
+                    modal_closed = True
+                
                 # 如果本轮没有关闭任何模态框，或者已经重试了足够次数，退出循环
-                if not modal_closed or retry == max_retries - 1:
+                if not current_modal_closed or retry == max_retries - 1:
                     break
                     
                 # 等待一段时间后重试
