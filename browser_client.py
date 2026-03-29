@@ -185,22 +185,23 @@ class TailChatBrowserClient:
             logger.info("未检测到登录状态，开始登录流程")
 
             # 查找登录表单 - 针对TailChat优化的选择器
+            # 根据inspector-export分析，nightly版本使用input.appearance-none
             selectors = [
+                "input.appearance-none",  # nightly版本的主要选择器
+                'input[name="login-email"]',
+                'input[name="login-username"]',
                 'input[type="text"]',
                 'input[type="email"]',
                 'input[name="username"]',
                 'input[name="email"]',
-                'input[placeholder*="用户名"]',
+                'input[placeholder*="name@example.com"]',
                 'input[placeholder*="邮箱"]',
                 'input[placeholder*="email"]',
+                'input[placeholder*="用户名"]',
                 'input[placeholder*="账号"]',
                 'input[placeholder*="account"]',
-                'input[placeholder*="name@example.com"]',
                 'input[placeholder*="邮箱或用户名"]',
                 'input[placeholder*="Email"]',
-                "input.appearance-none",
-                'input[name="login-email"]',
-                'input[name="login-username"]',
                 "input",
             ]
 
@@ -288,7 +289,9 @@ class TailChatBrowserClient:
                 await self.page.wait_for_timeout(random.randint(20, 50))
 
             # 查找登录按钮 - 针对TailChat优化的选择器
+            # 根据inspector-export分析，nightly版本使用button.w-full
             login_button_selectors = [
+                'button.w-full',  # nightly版本的主要选择器
                 'button[type="submit"]',
                 'button:has-text("登录")',
                 'button:has-text("Sign in")',
