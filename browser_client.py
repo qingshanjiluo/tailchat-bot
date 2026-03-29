@@ -1049,6 +1049,67 @@ class TailChatBrowserClient:
                 except:
                     continue
 
+            # 如果以上方法都失败，尝试点击"增加聊天"按钮
+            logger.info(f"尝试点击'增加聊天'按钮开始与用户 {user_id} 的对话")
+            
+            # 查找"增加聊天"按钮
+            add_chat_selectors = [
+                'button:has-text("增加聊天")',
+                'button:has-text("添加聊天")',
+                'button:has-text("新建聊天")',
+                'button:has-text("New Chat")',
+                'button:has-text("Start Chat")',
+                '[data-testid="new-chat-button"]',
+                '[aria-label*="增加聊天"]',
+                '[aria-label*="new chat"]',
+            ]
+            
+            for selector in add_chat_selectors:
+                try:
+                    add_chat_button = await self.page.wait_for_selector(selector, timeout=2000)
+                    if add_chat_button:
+                        await add_chat_button.click()
+                        await self.page.wait_for_timeout(2000)
+                        logger.info(f"点击了'增加聊天'按钮: {selector}")
+                        
+                        # 在搜索框中输入用户名
+                        user_search_selectors = [
+                            'input[placeholder*="搜索用户"]',
+                            'input[placeholder*="Search users"]',
+                            'input[placeholder*="输入用户名"]',
+                            '[data-testid="user-search-input"]',
+                        ]
+                        
+                        for search_selector in user_search_selectors:
+                            try:
+                                user_search = await self.page.wait_for_selector(search_selector, timeout=2000)
+                                if user_search:
+                                    await user_search.click()
+                                    await user_search.fill(user_id)
+                                    await self.page.wait_for_timeout(2000)
+                                    
+                                    # 选择用户
+                                    user_result_selectors = [
+                                        f'div:has-text("{user_id}")',
+                                        f'[data-user-id="{user_id}"]',
+                                        f'[data-testid="user-result-{user_id}"]',
+                                    ]
+                                    
+                                    for result_selector in user_result_selectors:
+                                        try:
+                                            user_result = await self.page.wait_for_selector(result_selector, timeout=2000)
+                                            if user_result:
+                                                await user_result.click()
+                                                await self.page.wait_for_timeout(3000)
+                                                logger.info(f"通过'增加聊天'功能找到用户 {user_id}")
+                                                return True
+                                        except:
+                                            continue
+                            except:
+                                continue
+                except:
+                    continue
+
             logger.warning(f"无法找到用户 {user_id} 的私信链接")
             return False
 
@@ -1090,6 +1151,9 @@ class TailChatBrowserClient:
                 return False
 
             self.connected = True
+            
+            # 登录成功后自动进入指定群组并报告登录成功
+            await self._report_login_success()
 
             # 开始监听消息
             await self.start_listening()
@@ -1111,6 +1175,59 @@ class TailChatBrowserClient:
 
         except Exception as e:
             logger.error(f"客户端运行失败: {e}")
+            return False
+
+    async def _report_login_success(self):
+        """登录成功后自动进入指定群组并报告登录成功"""
+        try:
+            logger.info("登录成功，正在进入指定群组报告登录状态...")
+            
+            # 指定群组URL
+            target_group_url = "https://chat.mk49.cyou/main/group/68a2be8fad67a2438ad9dbd4/68a2be8fad67a2438ad9dbd3"
+            
+            # 导航到指定群组
+            current_url = self.page.url
+            if target_group_url not in current_url:
+                logger.info(f"正在导航到指定群组: {target_group_url}")
+                await self.page.goto(target_group_url, wait_until="networkidle")
+                await self.page.wait_for_timeout(5000)  # 等待页面加载完成
+                
+                # 检查是否成功进入群组
+                new_url = self.page.url
+                if target_group_url in new_url:
+                    logger.info(f"成功进入指定群组: {new_url}")
+                else:
+                    logger.warning(f"可能未成功进入指定群组，当前URL: {new_url}")
+            
+            # 发送登录成功报告
+            report_message = "🤖 机器人登录成功！\n\n" \
+                           f"✅ 用户: {self.username}\n" \
+                           f"✅ 时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n" \
+                           f"✅ 状态: 已连接并开始监听消息\n" \
+                           "📱 机器人功能已就绪，可以处理@提及和私信。"
+            
+            # 获取群组ID（从URL中提取）
+            import re
+            match = re.search(r'/group/([^/]+)/([^/]+)', self.page.url)
+            if match:
+                group_id = match.group(1)
+                converse_id = match.group(2)
+                logger.info(f"群组ID: {group_id}, 会话ID: {converse_id}")
+                
+                # 发送登录成功消息
+                success = await self.send_message(converse_id, report_message)
+                if success:
+                    logger.info("✅ 登录成功报告已发送")
+                else:
+                    logger.warning("登录成功报告发送失败，但机器人继续运行")
+            else:
+                logger.warning("无法从URL提取群组和会话ID，跳过发送登录报告")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"报告登录成功失败: {e}")
+            # 即使报告失败，也不影响机器人继续运行
             return False
 
     async def test_connection(self):
