@@ -820,13 +820,20 @@ class TailChatBrowserClient:
             # 确保在正确的会话页面
             await self._ensure_converse_page(converse_id)
 
-            # 查找消息输入框
+            # 查找消息输入框 - 根据TailChat实际DOM结构更新
             input_selectors = [
+                ".chatbox-mention-input__input",      # TailChat群组聊天输入框
                 'textarea[placeholder*="消息"]',
                 'input[placeholder*="消息"]',
+                'textarea[placeholder*="说点什么"]',
+                'input[placeholder*="说点什么"]',
+                'textarea[placeholder*="Send"]',
+                'input[placeholder*="Send"]',
                 ".message-input",
                 '[contenteditable="true"]',
                 '[role="textbox"]',
+                'textarea',                           # 通用textarea
+                'input[type="text"]',                 # 通用文本输入框
             ]
 
             message_input = None
@@ -864,7 +871,7 @@ class TailChatBrowserClient:
             # 等待一下再发送
             await self.page.wait_for_timeout(random.randint(500, 1000))
 
-            # 查找发送按钮
+            # 查找发送按钮 - 根据TailChat实际DOM结构更新
             send_button_selectors = [
                 'button:has-text("发送")',
                 'button:has-text("Send")',
@@ -872,6 +879,9 @@ class TailChatBrowserClient:
                 ".send-button",
                 '[aria-label*="发送"]',
                 '[title*="发送"]',
+                'button[data-testid="send-button"]',  # TailChat可能的发送按钮
+                'button.ant-btn-primary',             # Ant Design主按钮
+                'button:has(svg)',                    # 包含图标的按钮（可能是发送图标）
             ]
 
             send_button = None
