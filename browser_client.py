@@ -158,6 +158,9 @@ class TailChatBrowserClient:
             # 查找登录表单
             # 尝试多种可能的登录表单选择器
             selectors = [
+                'input.appearance-none',
+                'input[name="login-email"]',
+                'input[name="login-username"]',
                 'input[type="text"]',
                 'input[type="email"]',
                 'input[name="username"]',
@@ -165,6 +168,7 @@ class TailChatBrowserClient:
                 'input[placeholder*="用户名"]',
                 'input[placeholder*="邮箱"]',
                 'input[placeholder*="account"]',
+                'input[placeholder*="name@example.com"]',
             ]
 
             username_input = None
@@ -192,10 +196,13 @@ class TailChatBrowserClient:
 
             # 查找密码输入框
             password_selectors = [
+                'input.appearance-none[type="password"]',
+                'input[name="login-password"]',
                 'input[type="password"]',
                 'input[name="password"]',
                 'input[placeholder*="密码"]',
                 'input[placeholder*="password"]',
+                'input[placeholder*="******"]',
             ]
 
             password_input = None
