@@ -1,0 +1,248 @@
+name: One-Click Browser Bot
+
+on:
+  workflow_dispatch:  # 手动触发，一键启动
+    inputs:
+      run_mode:
+        description: '运行模式'
+        required: true
+        default: 'normal'
+        type: choice
+        options:
+        - 'normal'      # 正常模式：6:00-22:00在线
+        - '24h'         # 24小时模式：全天在线
+        - 'test'        # 测试模式：运行30分钟测试
+      enable_logging:
+        description: '启用详细日志'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+        - 'true'
+        - 'false'
+
+jobs:
+  run-browser-bot:
+    runs-on: ubuntu-latest
+    
+    # 根据运行模式设置超时时间
+    timeout-minutes: ${{ 
+      github.event.inputs.run_mode == 'test' && '30' ||
+      github.event.inputs.run_mode == 'normal' && '960' ||  # 16小时
+      '1440'  # 24小时模式，24小时
+    }}
+    
+    steps:
+    - name: 📦 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 🐍 设置Python环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: 📥 安装系统依赖（Playwright所需）
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libnss3 \
+          libnspr4 \
+          libatk1.0-0 \
+          libatk-bridge2.0-0 \
+          libcups2 \
+          libdrm2 \
+          libdbus-1-3 \
+          libxkbcommon0 \
+          libxcomposite1 \
+          libxdamage1 \
+          libxfixes3 \
+          libxrandr2 \
+          libgbm1 \
+          libasound2 \
+          libatspi2.0-0 \
+          libwayland-client0
+        
+    - name: 📦 安装Python依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 🌐 安装Playwright浏览器
+      run: |
+        python -m playwright install chromium
+        python -m playwright install-deps chromium
+        
+    - name: ⚙️ 创建环境配置文件
+      env:
+        # 必需配置
+        TAILCHAT_USERNAME: ${{ secrets.TAILCHAT_USERNAME }}
+        TAILCHAT_PASSWORD: ${{ secrets.TAILCHAT_PASSWORD }}
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        
+        # 可选配置
+        TAILCHAT_API_URL: ${{ secrets.TAILCHAT_API_URL || 'https://chat.mk49.cyou' }}
+        TAILCHAT_HEADLESS: 'true'
+        TAILCHAT_USE_BROWSER: 'true'
+        
+        # 根据运行模式调整在线时间
+        BOT_ACTIVE_HOURS_START: ${{ github.event.inputs.run_mode == '24h' && '0' || '6' }}
+        BOT_ACTIVE_HOURS_END: ${{ github.event.inputs.run_mode == '24h' && '24' || '22' }}
+        
+        # 日志配置
+        LOG_LEVEL: ${{ github.event.inputs.enable_logging == 'true' && 'DEBUG' || 'INFO' }}
+        
+        # 其他配置
+        BOT_AUTO_REPLY: 'true'
+        BOT_AUTO_REPLY_PROBABILITY: '0.8'
+        WELCOME_MESSAGE: '🤖 你好！我是AI助手，已通过GitHub Actions一键启动。有什么可以帮你的吗？'
+        BUSY_MESSAGE: '💤 我现在不在线，请在活动时间内联系我。'
+        
+      run: |
+        echo "🔧 创建环境配置文件..."
+        cat > .env << EOF
+# TailChat 浏览器自动化配置
+TAILCHAT_API_URL=$TAILCHAT_API_URL
+TAILCHAT_USERNAME=$TAILCHAT_USERNAME
+TAILCHAT_PASSWORD=$TAILCHAT_PASSWORD
+TAILCHAT_USE_BROWSER=$TAILCHAT_USE_BROWSER
+TAILCHAT_HEADLESS=$TAILCHAT_HEADLESS
+TAILCHAT_BOT_USERNAME=AI助手(GitHub)
+
+# DeepSeek API 配置
+DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-chat
+
+# 机器人行为配置
+BOT_ACTIVE_HOURS_START=$BOT_ACTIVE_HOURS_START
+BOT_ACTIVE_HOURS_END=$BOT_ACTIVE_HOURS_END
+BOT_AUTO_REPLY=$BOT_AUTO_REPLY
+BOT_AUTO_REPLY_PROBABILITY=$BOT_AUTO_REPLY_PROBABILITY
+BOT_MAX_MESSAGE_LENGTH=1000
+
+# 对话记录配置
+ENABLE_CONVERSATION_HISTORY=true
+CONVERSATION_HISTORY_PATH=./conversations
+MAX_HISTORY_MESSAGES=50
+
+# 消息模板
+WELCOME_MESSAGE=$WELCOME_MESSAGE
+BUSY_MESSAGE=$BUSY_MESSAGE
+
+# 日志配置
+LOG_LEVEL=$LOG_LEVEL
+LOG_FILE=logs/bot_github_actions.log
+
+# 主动消息配置（可选）
+ACTIVE_MESSAGE_INTERVAL=3600
+
+# Git仓库配置（可选）
+# GIT_REPO_URL=https://github.com/username/repo.git
+# GIT_REPO_BRANCH=main
+# GIT_IMAGE_PATH=images/
+EOF
+        
+        echo "✅ 环境配置文件创建完成"
+        echo "📋 配置摘要："
+        echo "  - TailChat用户: $TAILCHAT_USERNAME"
+        echo "  - 运行模式: ${{ github.event.inputs.run_mode }}"
+        echo "  - 在线时间: $BOT_ACTIVE_HOURS_START:00-$BOT_ACTIVE_HOURS_END:00"
+        echo "  - 日志级别: $LOG_LEVEL"
+        
+    - name: 📁 创建必要目录
+      run: |
+        mkdir -p logs
+        mkdir -p conversations
+        echo "📂 目录结构已创建"
+        
+    - name: 🧪 测试配置
+      run: |
+        echo "🧪 测试Python导入和配置..."
+        python3 -c "
+import sys
+sys.path.insert(0, '.')
+try:
+    from config import config
+    print('✅ 配置导入成功')
+    print(f'   TailChat URL: {config.tailchat.api_url}')
+    print(f'   用户名: {config.tailchat.username}')
+    print(f'   使用浏览器: {config.tailchat.use_browser}')
+    print(f'   无头模式: {config.tailchat.headless}')
+    print(f'   DeepSeek API: {'已配置' if config.deepseek.api_key else '未配置'}')
+    print(f'   在线时间: {config.behavior.active_hours_start}:00-{config.behavior.active_hours_end}:00')
+    
+    if config.validate():
+        print('✅ 配置验证通过')
+    else:
+        print('❌ 配置验证失败')
+        sys.exit(1)
+except Exception as e:
+    print(f'❌ 配置测试失败: {e}')
+    sys.exit(1)
+"
+        
+    - name: 🤖 启动TailChat浏览器自动化机器人
+      env:
+        # 传递运行模式到机器人
+        RUN_MODE: ${{ github.event.inputs.run_mode }}
+        ENABLE_LOGGING: ${{ github.event.inputs.enable_logging }}
+      run: |
+        echo "🚀 启动TailChat浏览器自动化机器人..."
+        echo "========================================"
+        echo "   🤖 TailChat AI 浏览器自动化机器人"
+        echo "========================================"
+        echo "运行模式: $RUN_MODE"
+        echo "日志级别: $ENABLE_LOGGING"
+        echo "开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "========================================"
+        
+        # 设置环境变量让机器人知道是在GitHub Actions中运行
+        export GITHUB_ACTIONS=true
+        export RUN_MODE=$RUN_MODE
+        
+        # 启动机器人
+        python main_browser.py
+        
+    - name: 📤 上传日志文件（运行完成后）
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bot-logs-${{ github.run_id }}
+        path: |
+          logs/
+          conversations/
+        retention-days: 7
+        
+    - name: 📊 生成运行报告
+      if: always()
+      run: |
+        echo "📊 运行报告"
+        echo "=========="
+        echo "运行ID: ${{ github.run_id }}"
+        echo "运行模式: ${{ github.event.inputs.run_mode }}"
+        echo "开始时间: ${{ github.workflow.created_at }}"
+        echo "结束时间: $(date -Iseconds)"
+        echo "状态: ${{ job.status }}"
+        echo ""
+        
+        # 如果有日志文件，显示最后几行
+        if [ -f "logs/bot_github_actions.log" ]; then
+          echo "📝 最后日志片段:"
+          tail -20 logs/bot_github_actions.log || echo "无法读取日志"
+        fi
+        
+    - name: 🚨 错误处理通知
+      if: failure()
+      run: |
+        echo "❌ 机器人运行失败"
+        echo "请检查："
+        echo "1. TailChat用户名密码是否正确"
+        echo "2. DeepSeek API密钥是否有效"
+        echo "3. 网络连接是否正常"
+        echo "4. 查看上方日志获取详细信息"
+        
+        # 如果有错误日志，显示最后50行
+        if [ -f "logs/bot_github_actions.log" ]; then
+          echo "🔍 错误日志:"
+          tail -50 logs/bot_github_actions.log | grep -i error || echo "未找到错误信息"
+        fi

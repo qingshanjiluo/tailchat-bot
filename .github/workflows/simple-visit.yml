@@ -1,0 +1,309 @@
+name: Simple TailChat Visit
+
+on:
+  schedule:
+    # 每天北京时间6:00-22:00之间每小时运行一次
+    - cron: '0 22-14 * * *'  # UTC时间22点-14点（北京时间6点-22点）
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      url:
+        description: '要访问的TailChat URL'
+        required: false
+        default: 'https://chat.mk49.cyou/'
+
+jobs:
+  visit-website:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 playwright
+        
+    - name: Install Playwright browser
+      run: |
+        python -m playwright install chromium
+        python -m playwright install-deps
+        
+    - name: Create simple visit script
+      run: |
+        cat > visit_tailchat.py << 'EOF'
+"""
+简单的TailChat网站访问脚本
+"""
+import os
+import time
+import json
+import requests
+from datetime import datetime
+from playwright.sync_api import sync_playwright
+
+def visit_website(url):
+    """访问网站并检查状态"""
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "url": url,
+        "success": False,
+        "status_code": None,
+        "load_time": None,
+        "title": None,
+        "error": None
+    }
+    
+    try:
+        # 方法1: 使用requests检查HTTP状态
+        print(f"🔍 检查HTTP状态: {url}")
+        start_time = time.time()
+        response = requests.get(url, timeout=30, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        results["status_code"] = response.status_code
+        results["load_time"] = round(time.time() - start_time, 2)
+        
+        if response.status_code == 200:
+            print(f"✅ HTTP 200 OK - 加载时间: {results['load_time']}秒")
+            
+            # 方法2: 使用Playwright进行完整页面访问
+            print("🌐 使用浏览器访问页面...")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=['--no-sandbox', '--disable-dev-shm-usage']
+                )
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                )
+                page = context.new_page()
+                
+                try:
+                    page_start = time.time()
+                    page.goto(url, wait_until='networkidle', timeout=60000)
+                    page.wait_for_load_state('networkidle')
+                    
+                    # 获取页面信息
+                    results["title"] = page.title()
+                    results["final_url"] = page.url
+                    results["browser_load_time"] = round(time.time() - page_start, 2)
+                    
+                    # 检查TailChat特定元素
+                    tailchat_elements = {
+                        "has_tailchat_app": bool(page.locator('#tailchat-app').count()),
+                        "has_login_form": bool(page.locator('input[type="text"], input[type="password"]').count()),
+                        "has_chat_interface": bool(page.locator('div[class*="chat"], div[class*="message"]').count()),
+                    }
+                    results["tailchat_elements"] = tailchat_elements
+                    
+                    # 截取屏幕截图
+                    screenshot_path = f"/tmp/tailchat_{int(time.time())}.png"
+                    page.screenshot(path=screenshot_path, full_page=True)
+                    results["screenshot"] = screenshot_path
+                    
+                    print(f"📄 页面标题: {results['title']}")
+                    print(f"🔗 最终URL: {results['final_url']}")
+                    print(f"⏱️  浏览器加载时间: {results['browser_load_time']}秒")
+                    print(f"🔍 TailChat元素检测: {tailchat_elements}")
+                    
+                    results["success"] = True
+                    
+                except Exception as e:
+                    results["error"] = f"浏览器访问失败: {str(e)}"
+                    print(f"⚠️  浏览器访问异常: {e}")
+                finally:
+                    browser.close()
+        else:
+            results["error"] = f"HTTP状态码异常: {response.status_code}"
+            print(f"❌ HTTP状态码: {response.status_code}")
+            
+    except requests.exceptions.RequestException as e:
+        results["error"] = f"网络请求失败: {str(e)}"
+        print(f"❌ 网络请求失败: {e}")
+    except Exception as e:
+        results["error"] = f"未知错误: {str(e)}"
+        print(f"❌ 未知错误: {e}")
+    
+    return results
+
+def check_friends_page(base_url):
+    """检查好友页面（如果可能）"""
+    friends_url = f"{base_url.rstrip('/')}/main/personal/friends"
+    print(f"👥 尝试访问好友页面: {friends_url}")
+    
+    try:
+        response = requests.get(friends_url, timeout=30, allow_redirects=True)
+        
+        if response.status_code == 200:
+            print(f"✅ 好友页面可访问")
+            return {
+                "accessible": True,
+                "status_code": 200,
+                "url": friends_url
+            }
+        elif response.status_code in [301, 302, 303, 307, 308]:
+            print(f"↪️  好友页面重定向到: {response.headers.get('Location', '未知')}")
+            return {
+                "accessible": False,
+                "status_code": response.status_code,
+                "redirect_to": response.headers.get('Location'),
+                "url": friends_url
+            }
+        else:
+            print(f"❌ 好友页面访问失败: HTTP {response.status_code}")
+            return {
+                "accessible": False,
+                "status_code": response.status_code,
+                "url": friends_url
+            }
+    except Exception as e:
+        print(f"❌ 好友页面检查异常: {e}")
+        return {
+            "accessible": False,
+            "error": str(e),
+            "url": friends_url
+        }
+
+def main():
+    """主函数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='访问TailChat网站')
+    parser.add_argument('--url', default='https://chat.mk49.cyou/', help='目标URL')
+    parser.add_argument('--check-friends', action='store_true', help='检查好友页面')
+    
+    args = parser.parse_args()
+    
+    print("=" * 60)
+    print(f"🚀 TailChat网站访问检查")
+    print(f"📅 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🌐 目标: {args.url}")
+    print("=" * 60)
+    
+    # 访问主页面
+    main_result = visit_website(args.url)
+    
+    # 检查好友页面（如果启用）
+    friends_result = None
+    if args.check_friends and main_result.get("success"):
+        friends_result = check_friends_page(args.url)
+    
+    # 汇总结果
+    final_result = {
+        "main_page": main_result,
+        "friends_page": friends_result,
+        "summary": {
+            "main_page_success": main_result["success"],
+            "friends_page_accessible": friends_result["accessible"] if friends_result else None,
+            "timestamp": datetime.now().isoformat()
+        }
+    }
+    
+    # 保存结果
+    output_file = "visit_results.json"
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(final_result, f, ensure_ascii=False, indent=2)
+    
+    print("\n" + "=" * 60)
+    print("📊 检查完成!")
+    print(f"📄 主页面: {'✅ 成功' if main_result['success'] else '❌ 失败'}")
+    if main_result.get("error"):
+        print(f"  错误: {main_result['error']}")
+    
+    if friends_result:
+        print(f"👥 好友页面: {'✅ 可访问' if friends_result.get('accessible') else '❌ 不可访问'}")
+    
+    print(f"💾 结果已保存到: {output_file}")
+    print("=" * 60)
+    
+    # 退出码
+    exit(0 if main_result["success"] else 1)
+
+if __name__ == "__main__":
+    main()
+EOF
+        
+    - name: Run website visit
+      env:
+        TARGET_URL: ${{ github.event.inputs.url || 'https://chat.mk49.cyou/' }}
+      run: |
+        echo "开始访问TailChat网站..."
+        echo "目标URL: $TARGET_URL"
+        
+        python visit_tailchat.py \
+          --url "$TARGET_URL" \
+          --check-friends
+        
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: tailchat-visit-results
+        path: |
+          visit_results.json
+          /tmp/tailchat_*.png
+        retention-days: 7
+        
+    - name: Display summary
+      if: always()
+      run: |
+        echo "📋 访问结果摘要:"
+        echo "========================"
+        
+        if [ -f visit_results.json ]; then
+          # 提取关键信息
+          MAIN_SUCCESS=$(python -c "import json; data=json.load(open('visit_results.json')); print(data['main_page']['success'])")
+          STATUS_CODE=$(python -c "import json; data=json.load(open('visit_results.json')); print(data['main_page'].get('status_code', 'N/A'))")
+          LOAD_TIME=$(python -c "import json; data=json.load(open('visit_results.json')); print(data['main_page'].get('load_time', 'N/A'))")
+          TITLE=$(python -c "import json; data=json.load(open('visit_results.json')); print(data['main_page'].get('title', 'N/A'))")
+          
+          echo "主页面访问: $( [ "$MAIN_SUCCESS" = "True" ] && echo '✅ 成功' || echo '❌ 失败' )"
+          echo "HTTP状态码: $STATUS_CODE"
+          echo "加载时间: ${LOAD_TIME}秒"
+          echo "页面标题: $TITLE"
+          
+          # 检查好友页面
+          FRIENDS_ACCESS=$(python -c "
+import json
+try:
+    data = json.load(open('visit_results.json'))
+    friends = data.get('friends_page')
+    if friends:
+        accessible = friends.get('accessible')
+        if accessible is True:
+            print('✅ 可访问')
+        elif accessible is False:
+            print('❌ 不可访问')
+        else:
+            print('➖ 未检查')
+    else:
+        print('➖ 未检查')
+except:
+    print('➖ 检查失败')
+")
+          echo "好友页面: $FRIENDS_ACCESS"
+        else
+          echo "❌ 结果文件未生成"
+        fi
+        
+        echo "========================"
+        
+    - name: Send success notification
+      if: success()
+      run: |
+        echo "🎉 TailChat网站访问成功!"
+        echo "工作流运行链接: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        
+    - name: Send failure notification
+      if: failure()
+      run: |
+        echo "⚠️ TailChat网站访问失败!"
+        echo "工作流运行链接: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        echo "请检查日志了解详情"
