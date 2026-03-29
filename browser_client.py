@@ -516,26 +516,73 @@ class TailChatBrowserClient:
                 "/chat" in current_url
                 or "/message" in current_url
                 or "/converse" in current_url
+                or "/inbox" in current_url  # 收件箱也是消息页面
+                or "/group/" in current_url  # 群组聊天
+                or "/main/group/" in current_url  # 群组聊天完整路径
             ):
+                logger.info(f"当前已在消息页面: {current_url}")
                 return True
 
-            # 尝试导航到消息页面
+            logger.info(f"当前不在消息页面: {current_url}，尝试导航...")
+
+            # 首先检查是否在朋友页面，需要点击"聊天室"按钮
+            if "/personal/friends" in current_url:
+                logger.info("检测到在朋友页面，尝试点击'聊天室'按钮")
+                try:
+                    # 尝试找到聊天室按钮
+                    chat_button_selectors = [
+                        '#open-chat',
+                        'button:has-text("聊天室")',
+                        'button:has-text("聊天")',
+                        'button:has-text("Chat")',
+                        'a[href*="/chat"]',
+                        'a[href*="/message"]',
+                    ]
+                    
+                    for selector in chat_button_selectors:
+                        try:
+                            button = await self.page.wait_for_selector(selector, timeout=3000)
+                            if button:
+                                logger.info(f"找到聊天按钮: {selector}")
+                                await button.click()
+                                await self.page.wait_for_timeout(3000)
+                                
+                                # 检查是否成功导航
+                                new_url = self.page.url
+                                if "/chat" in new_url or "/message" in new_url or "/converse" in new_url:
+                                    logger.info(f"成功导航到消息页面: {new_url}")
+                                    return True
+                        except:
+                            continue
+                except Exception as e:
+                    logger.warning(f"点击聊天室按钮失败: {e}")
+
+            # 通用消息页面导航
             message_link_selectors = [
                 'a[href*="/chat"]',
                 'a[href*="/message"]',
                 'a[href*="/converse"]',
+                'a[href*="/inbox"]',
                 'button:has-text("消息")',
                 'button:has-text("聊天")',
                 'button:has-text("Chat")',
+                'button:has-text("收件箱")',
+                'button:has-text("Inbox")',
             ]
 
             for selector in message_link_selectors:
                 try:
                     link = await self.page.wait_for_selector(selector, timeout=2000)
                     if link:
+                        logger.info(f"找到消息链接: {selector}")
                         await link.click()
-                        await self.page.wait_for_timeout(2000)
-                        return True
+                        await self.page.wait_for_timeout(3000)
+                        
+                        # 检查是否成功导航
+                        new_url = self.page.url
+                        if any(keyword in new_url for keyword in ["/chat", "/message", "/converse", "/inbox", "/group/"]):
+                            logger.info(f"成功导航到消息页面: {new_url}")
+                            return True
                 except:
                     continue
 
@@ -564,8 +611,13 @@ class TailChatBrowserClient:
             messages = await self._get_recent_messages()
 
             for message in messages:
-                # 处理消息
-                await self._handle_message(message)
+                # 根据消息类型调用不同的处理方法
+                if message.get("isDM"):
+                    # 私信处理
+                    await self._handle_direct_message(message)
+                else:
+                    # 普通消息处理
+                    await self._handle_message(message)
 
             self.last_message_check = time.time()
 
@@ -578,12 +630,16 @@ class TailChatBrowserClient:
             # 尝试从页面获取消息
             # 这里需要根据TailChat的实际DOM结构来调整
 
-            # 方法1: 从消息列表获取
+            # 方法1: 从消息列表获取 - 根据inspector-export分析TailChat的实际DOM结构
             message_selectors = [
+                "div.break-all",          # 消息文本容器
+                "div.shadow-lg",          # 消息气泡
+                "div.w-full",             # 消息容器
                 ".message-item",
                 '[class*="message"]',
                 '[data-testid="message"]',
                 ".chat-message",
+                "div[class*='message-']", # 消息相关div
             ]
 
             messages = []
@@ -640,10 +696,12 @@ class TailChatBrowserClient:
             if dm_indicators:
                 is_dm = True
 
-            # 检查@提及
+            # 检查@提及 - 改进的检测方法
             mentions = []
+            
+            # 方法1: 检查mention元素
             mention_elements = await element.query_selector_all(
-                ".mention, [data-mention]"
+                ".mention, [data-mention], [class*='mention']"
             )
             for mention_element in mention_elements:
                 mention_id = await mention_element.get_attribute(
@@ -651,18 +709,47 @@ class TailChatBrowserClient:
                 ) or await mention_element.get_attribute("data-user-id")
                 if mention_id:
                     mentions.append(mention_id)
+            
+            # 方法2: 从文本内容检测@提及（TailChat中可能是纯文本）
+            if content:
+                import re
+                # 匹配 @用户名 格式
+                mention_patterns = [
+                    r'@([\w\u4e00-\u9fa5\-_]+)',  # 中文、英文、数字、下划线
+                    r'@([^\\s]+)',  # 非空白字符
+                ]
+                
+                for pattern in mention_patterns:
+                    matches = re.findall(pattern, content)
+                    for match in matches:
+                        if match and match not in mentions:
+                            mentions.append(match)
+            
+            # 检查是否@了当前机器人
+            bot_mentioned = False
+            if self.user_id and str(self.user_id) in mentions:
+                bot_mentioned = True
+            elif self.config.bot_username and self.config.bot_username in mentions:
+                bot_mentioned = True
+            elif self.config.username and self.config.username in mentions:
+                bot_mentioned = True
+            # 检查常见机器人名称
+            bot_names = ["AI助手", "AI", "机器人", "bot", "Bot", "BOT"]
+            for name in bot_names:
+                if name in content and ("@" in content or "回复" in content or "回答" in content):
+                    bot_mentioned = True
+                    break
 
             return {
                 "_id": message_id,
                 "content": content.strip() if content else "",
                 "author": author.strip() if author else "",
-                "author": (
-                    author_id.strip() if author_id else ""
-                ),  # TailChat中author就是用户ID
+                "authorId": author_id.strip() if author_id else "",
                 "converseId": "unknown",  # 需要根据实际结构获取
                 "groupId": None,
                 "isDM": is_dm,
                 "mentions": mentions,
+                "bot_mentioned": bot_mentioned,
                 "createdAt": str(time.time()),
             }
 
@@ -684,6 +771,40 @@ class TailChatBrowserClient:
 
         except Exception as e:
             logger.error(f"处理消息失败: {e}")
+
+    async def _handle_direct_message(self, message_data: Dict):
+        """处理私信"""
+        try:
+            author = message_data.get('author', '')
+            content = message_data.get('content', '')
+            sender_id = message_data.get("authorId") or message_data.get("author")
+            
+            logger.info(f"收到私信: {author}: {content[:50]}...")
+            
+            # 检查是否需要导航到私信页面
+            current_url = self.page.url
+            if "/inbox" not in current_url and "/personal" not in current_url:
+                logger.info("当前不在私信页面，尝试导航到收件箱")
+                await self._navigate_to_inbox()
+            
+            # 自动回复私信逻辑
+            if content:
+                # 智能回复策略
+                if "你好" in content or "hi" in content.lower() or "hello" in content.lower():
+                    reply_content = f"你好{author}！我是TailChat AI助手，很高兴收到你的私信！"
+                elif "帮助" in content or "help" in content.lower():
+                    reply_content = f"{author}，我可以帮助你处理以下事项：\n1. 回答关于TailChat的问题\n2. 协助处理群组消息\n3. 提供技术支持\n请告诉我具体需要什么帮助？"
+                elif "?" in content or "？" in content:
+                    reply_content = f"{author}，我收到了你的问题。让我思考一下如何回答..."
+                else:
+                    reply_content = f"收到你的私信: {content[:100]}... 我正在处理中。"
+                
+                if sender_id:
+                    await self.send_direct_message(sender_id, reply_content)
+                    logger.info(f"已回复私信给 {author} ({sender_id})")
+            
+        except Exception as e:
+            logger.error(f"处理私信失败: {e}")
 
     def add_message_handler(self, handler: Callable):
         """添加消息处理器"""
@@ -820,15 +941,63 @@ class TailChatBrowserClient:
             logger.error(f"发送私信失败: {e}")
             return False
 
+    async def _navigate_to_inbox(self):
+        """导航到私信收件箱"""
+        try:
+            logger.info("尝试导航到私信收件箱")
+            
+            # 方法1: 直接访问收件箱URL
+            base_url = self.config.api_url.rstrip("/")
+            inbox_url = f"{base_url}/main/inbox"
+            
+            current_url = self.page.url
+            if "/inbox" not in current_url:
+                await self.page.goto(inbox_url, wait_until="networkidle")
+                await self.page.wait_for_timeout(3000)
+                logger.info(f"已导航到收件箱: {inbox_url}")
+            
+            # 方法2: 点击收件箱按钮
+            inbox_button_selectors = [
+                'a[href*="/inbox"]',
+                'button:has-text("收件箱")',
+                'button:has-text("Inbox")',
+                '[data-testid="inbox-button"]',
+                '[aria-label*="收件箱"]',
+                '[aria-label*="inbox"]',
+            ]
+            
+            for selector in inbox_button_selectors:
+                try:
+                    inbox_button = await self.page.wait_for_selector(selector, timeout=2000)
+                    if inbox_button:
+                        await inbox_button.click()
+                        await self.page.wait_for_timeout(3000)
+                        logger.info(f"通过按钮导航到收件箱: {selector}")
+                        return True
+                except:
+                    continue
+            
+            logger.info("已在收件箱页面或无法找到收件箱按钮")
+            return True
+            
+        except Exception as e:
+            logger.error(f"导航到收件箱失败: {e}")
+            return False
+
     async def _navigate_to_dm(self, user_id: str):
         """导航到私信页面"""
         try:
+            # 首先确保在收件箱页面
+            await self._navigate_to_inbox()
+            
             # 查找私信按钮或链接
             dm_selectors = [
                 f'a[href*="/dm/{user_id}"]',
                 f'a[href*="/user/{user_id}"]',
                 f'button[data-user-id="{user_id}"]',
                 f'[data-testid="dm-{user_id}"]',
+                f'[data-user-id="{user_id}"]',
+                f'div:has-text("{user_id}")',
             ]
 
             for selector in dm_selectors:
@@ -836,12 +1005,51 @@ class TailChatBrowserClient:
                     dm_link = await self.page.wait_for_selector(selector, timeout=2000)
                     if dm_link:
                         await dm_link.click()
-                        await self.page.wait_for_timeout(2000)
+                        await self.page.wait_for_timeout(3000)
+                        logger.info(f"成功导航到用户 {user_id} 的私信页面")
                         return True
                 except:
                     continue
 
-            logger.warning(f"未找到用户 {user_id} 的私信链接")
+            logger.warning(f"无法找到用户 {user_id} 的私信链接，尝试通过用户名搜索")
+            
+            # 尝试通过用户名搜索
+            search_selectors = [
+                'input[placeholder*="搜索"]',
+                'input[placeholder*="Search"]',
+                '[data-testid="search-input"]',
+                '.search-input',
+            ]
+            
+            for selector in search_selectors:
+                try:
+                    search_box = await self.page.wait_for_selector(selector, timeout=2000)
+                    if search_box:
+                        await search_box.click()
+                        await search_box.fill(user_id)
+                        await self.page.wait_for_timeout(2000)
+                        
+                        # 点击搜索结果
+                        result_selectors = [
+                            f'div:has-text("{user_id}")',
+                            f'[data-user-id="{user_id}"]',
+                            f'[data-testid="user-{user_id}"]',
+                        ]
+                        
+                        for result_selector in result_selectors:
+                            try:
+                                result = await self.page.wait_for_selector(result_selector, timeout=2000)
+                                if result:
+                                    await result.click()
+                                    await self.page.wait_for_timeout(3000)
+                                    logger.info(f"通过搜索找到用户 {user_id}")
+                                    return True
+                            except:
+                                continue
+                except:
+                    continue
+
+            logger.warning(f"无法找到用户 {user_id} 的私信链接")
             return False
 
         except Exception as e:
