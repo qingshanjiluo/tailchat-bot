@@ -25,6 +25,9 @@ class MessageProcessor:
         self.tailchat = tailchat_client
         self.deepseek = deepseek_client
 
+        # 加载风格指南
+        self.style_guide = self._load_style_guide()
+
         # 命令前缀
         self.command_prefix = ["!", "！", "/"]
 
@@ -49,7 +52,7 @@ class MessageProcessor:
         # 用户状态跟踪
         self.user_states = {}
 
-        logger.info("消息处理器初始化完成")
+        logger.info("消息处理器初始化完成，风格指南已加载")
 
     def process_message(self, message: Message):
         """处理收到的消息（根据新要求：只回复私信，@必须回复）"""
@@ -396,6 +399,19 @@ class MessageProcessor:
 
                 self.tailchat.send_message(message.converse_id, reply)
 
+    def _load_style_guide(self) -> str:
+        """加载风格指南"""
+        try:
+            with open('style.txt', 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.warning(f"无法加载风格指南文件: {e}")
+            return """# 默认风格指南
+- 友好、热情、乐于助人
+- 使用中文回复，适当使用表情符号
+- 回复简洁明了，避免冗长
+- 保持专业但不过于正式"""
+
     def _extract_clean_content(self, content: str, mentions: List[str]) -> str:
         """提取干净的文本内容（去掉@标记）"""
         if not mentions:
@@ -409,18 +425,26 @@ class MessageProcessor:
 
     def _build_system_prompt(self, message: Message) -> str:
         """构建系统提示"""
-        base_prompt = "你是一个TailChat聊天平台上的AI助手。"
+        base_prompt = f"""你是一个TailChat聊天平台上的AI助手。
+
+请遵循以下风格指南：
+{self.style_guide}
+
+"""
 
         if message.is_direct_message():
-            base_prompt += " 你正在通过私信与用户交流。"
+            base_prompt += "当前场景：私信对话。请提供详细、个性化的回复，长度控制在100-300字。\n"
         else:
-            base_prompt += " 你正在群组聊天中与用户交流。"
+            base_prompt += "当前场景：群聊对话。请提供简洁、直接的回复，长度控制在50-150字。\n"
 
         base_prompt += """
-        请用中文回复，保持友好、有帮助的态度。
-        如果用户询问你的能力，可以介绍你可以回答问题、生成文本、分析情感等。
-        保持回复简洁明了，避免过于冗长。
-        """
+重要提示：
+1. 请用中文回复，保持友好、有帮助的态度
+2. 根据对话场景调整回复风格和长度
+3. 适当使用表情符号增强表达
+4. 如果用户询问你的能力，可以介绍你可以回答问题、生成文本、分析情感等
+5. 保持回复自然流畅，符合人类对话习惯
+"""
 
         return base_prompt
 
